@@ -31,3 +31,10 @@ server:
   port: 8443
   ssl:
     bundle: "web"
+  servlet:
+    session:
+      cookie:
+        name: JSESSIONID
+        http-only: true
+        secure: true
+        same-site: strict
