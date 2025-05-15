@@ -1,63 +1,64 @@
----
-name: "Daily Security Pipeline"
+name: Daily Security Pipeline
+
 on:
   schedule:
-    - cron: '0 0 * * *'  # Every day at midnight UTC
-  workflow_dispatch:
+    # Exécution quotidienne à minuit (UTC)
+    - cron: '0 0 * * *'
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
 jobs:
   DependenciesAnalysis:
-    name: Dependencies & Semgrep Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install OSV Scanner v2.0.2
+        run: |
+          curl -L -o osv-scanner https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64
+          chmod +x osv-scanner
+          sudo mv osv-scanner /usr/local/bin/osv-scanner
+
+      - name: Run OSV Scanner
+        run: |
+          osv-scanner \
+            --format sarif \
+            --output osv-scan-results.sarif \
+            --fail-on high \
+            app/
+        # on échoue la job si des vulnérabilités >= high sont trouvées
+        continue-on-error: false
+
+      - name: Upload OSV SARIF report to Security Dashboard
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: osv-scan-results.sarif
+
+  SemgrepAnalysis:
     runs-on: ubuntu-latest
     container:
-      image: returntocorp/semgrep
+      image: returntocorp/semgrep:latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Install OSV Scanner
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Run Semgrep with Java ruleset
         run: |
-          curl -s https://api.github.com/repos/google/osv-scanner/releases/latest \
-          | grep "browser_download_url" \
-          | grep "linux_amd64.tar.gz" \
-          | cut -d '"' -f 4 \
-          | xargs curl -L -o osv-scanner.tar.gz
-          tar -xzf osv-scanner.tar.gz
-          mv osv-scanner /usr/local/bin/
-      - name: Run OSV Scanner
-        run: |
-          osv-scanner --lockfile=**/package-lock.json --format=sarif \
-          > osv-report.sarif || echo "OSV scan failed"
-      - name: Run Semgrep analysis (Java ruleset)
-        run: |
-          semgrep --config p/java --sarif -o semgrep-report.sarif \
-          || echo "Semgrep failed"
-      - name: Upload Semgrep SARIF report
-        uses: github/codeql-action/upload-sarif@v2
+          semgrep \
+            --config p/java \
+            --sarif \
+            --output semgrep-results.sarif \
+            --fail-severity ERROR
+
+      - name: Upload Semgrep SARIF to Security Dashboard
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: semgrep-report.sarif
-      - name: Upload OSV SARIF report
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: osv-report.sarif
-  SourceCodeAnalysis:
-    name: Source Code Scan (OSV Only)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Install OSV Scanner
-        run: |
-          curl -s https://api.github.com/repos/google/osv-scanner/releases/latest \
-          | grep "browser_download_url" \
-          | grep "linux_amd64.tar.gz" \
-          | cut -d '"' -f 4 \
-          | xargs curl -L -o osv-scanner.tar.gz
-          tar -xzf osv-scanner.tar.gz
-          sudo mv osv-scanner /usr/local/bin/
-      - name: Run OSV Scanner
-        run: |
-          osv-scanner --lockfile=**/package-lock.json --format=sarif \
-          > osv-report.sarif || echo "OSV scan failed"
-      - name: Upload SARIF report
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: osv-report.sarif
+          sarif_file: semgrep-results.sarif
+
