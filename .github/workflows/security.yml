@@ -1,9 +1,9 @@
+---
 name: Daily Security Pipeline
 
 on:
   schedule:
-    # Exécution quotidienne à minuit (UTC)
-    - cron: '0 0 * * *'
+    - cron: '0 0 * * *'   # Tous les jours à minuit UTC
   push:
     branches:
       - main
@@ -27,13 +27,10 @@ jobs:
 
       - name: Run OSV Scanner
         run: |
-          osv-scanner \
+          osv-scanner scan source \
             --format sarif \
             --output osv-scan-results.sarif \
-            --fail-on high \
             app/
-        # on échoue la job si des vulnérabilités >= high sont trouvées
-        continue-on-error: false
 
       - name: Upload OSV SARIF report to Security Dashboard
         uses: github/codeql-action/upload-sarif@v3
@@ -49,13 +46,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Run Semgrep with Java ruleset
+      - name: Run Semgrep with Java ruleset and block on findings
         run: |
-          semgrep \
+          semgrep scan \
             --config p/java \
             --sarif \
             --output semgrep-results.sarif \
-            --fail-severity ERROR
+            --error .
 
       - name: Upload Semgrep SARIF to Security Dashboard
         uses: github/codeql-action/upload-sarif@v3
